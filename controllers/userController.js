@@ -1,6 +1,9 @@
 const User = require("../models/userModel");
 const asyncHandler = require("express-async-handler");
 const { generateToken } = require("../config/jwtToken");
+const validateMongoDbId = require("../utils/validateMongoDbId");
+const { generateRefreshToken } = require("../config/refreshToken");
+const jwt = require("jsonwebtoken");
 
 const createUser = asyncHandler(async (req, res) => {
   const email = req.body.email;
@@ -22,6 +25,20 @@ const loginUser = asyncHandler(async (req, res) => {
 
   if (foundUser && (await foundUser.isPasswordMatched(password))) {
     const { _id, first_name, last_name } = foundUser;
+    const refreshToken = generateRefreshToken(_id);
+    const updateUser = await User.findOneAndUpdate(
+      _id,
+      {
+        refreshToken,
+      },
+      {
+        new: true,
+      }
+    );
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      maxAge: 72 * 60 * 60 * 1000,
+    });
     res.json({
       _id,
       first_name,
@@ -46,8 +63,9 @@ const getUsers = asyncHandler(async (req, res) => {
 
 //Get single user
 const getUser = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  validateMongoDbId();
   try {
-    const { id } = req.params;
     const user = await User.findById(id);
     res.json(user);
   } catch (error) {
@@ -89,4 +107,28 @@ const updateUser = asyncHandler(async (req, res) => {
   }
 });
 
-module.exports = { createUser, loginUser, getUsers, getUser, deleteUser, updateUser };
+const handleRefreshToken = asyncHandler(async (req, res) => {
+  const cookie = req.cookies;
+  console.log(cookie);
+  if (!cookie) throw new Error("No refresh token in cookies");
+  const refreshToken = cookie.refreshToken;
+  const user = User.findOne({ refreshToken });
+  if (!user) throw new Error("Invalid token!!");
+  jwt.verify(refreshToken, process.env.SECRET_KEY, (err, decode) => {
+    if (err || user.id !== decode.id) {
+      throw new Error("Invalid refershToken!!");
+    }
+    const accessToken = generateToken(user.id);
+    res.json({ accessToken });
+  });
+});
+
+module.exports = {
+  createUser,
+  loginUser,
+  getUsers,
+  getUser,
+  deleteUser,
+  updateUser,
+  handleRefreshToken,
+};

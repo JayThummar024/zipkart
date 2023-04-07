@@ -30,6 +30,10 @@ var userSchema = new mongoose.Schema(
       type: Array,
       default: [],
     },
+    refreshToken: {
+      type: String,
+      default: "",
+    },
     address: [{ type: ObjectId, ref: "Address" }],
     whishlist: [{ type: ObjectId, ref: "Product" }],
   },
